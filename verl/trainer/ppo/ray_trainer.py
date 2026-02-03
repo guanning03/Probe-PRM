@@ -266,7 +266,7 @@ def compute_advantage(
         )
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
-    elif adv_estimator in [AdvantageEstimator.P_NORMALIZATION, AdvantageEstimator.CLIPPED_P_NORMALIZATION]:
+    elif adv_estimator in [AdvantageEstimator.MAXRL, AdvantageEstimator.CLIPPED_P_NORMALIZATION]:
         # Initialize the mask for GRPO calculation
         grpo_calculation_mask = data.batch["response_mask"]
         if multi_turn:
@@ -460,7 +460,7 @@ class RayPPOTrainer:
             AdvantageEstimator.OPO,
             AdvantageEstimator.REINFORCE_PLUS_PLUS_BASELINE,
             AdvantageEstimator.GRPO_WITH_FILTERED_SFT,
-            AdvantageEstimator.P_NORMALIZATION,
+            AdvantageEstimator.MAXRL,
             AdvantageEstimator.PKPO,
             AdvantageEstimator.MACLAURIN,
             AdvantageEstimator.CROSS_FITTED_MACLAURIN,

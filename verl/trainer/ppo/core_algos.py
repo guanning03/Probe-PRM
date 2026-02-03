@@ -125,7 +125,7 @@ class AdvantageEstimator(str, Enum):
     OPO = "opo"
     GRPO_PASSK = "grpo_passk"
     GRPO_WITH_FILTERED_SFT = "grpo_with_filtered_sft"
-    P_NORMALIZATION = "p_normalization"
+    MAXRL = "maxrl"
     PKPO = "pkpo"
     MACLAURIN = "maclaurin"
     MACLAURIN_BASELINE = "maclaurin_baseline"
@@ -399,8 +399,8 @@ def compute_one_sided_grpo_outcome_advantage(
         advantage = P_normalized.flatten().unsqueeze(-1) * response_mask
     return advantage, advantage
 
-@register_adv_est(AdvantageEstimator.P_NORMALIZATION)
-def compute_p_normalization_outcome_advantage(
+@register_adv_est(AdvantageEstimator.MAXRL)
+def compute_maxrl_outcome_advantage(
     token_level_rewards: torch.Tensor,
     response_mask: torch.Tensor,
     index: np.ndarray,
@@ -657,7 +657,7 @@ def compute_misc_outcome_advantage(
         denom_mean = mean_reward + epsilon
         if advantage_type == "grpo":
             advantages = (rewards - mean_reward) / denom_std
-        elif advantage_type == "p_normalization":
+        elif advantage_type == "maxrl":
             advantages = ((rewards - mean_reward) / denom_std) / denom_mean
         elif advantage_type == "reinforce_without_baseline":
             advantages = rewards
