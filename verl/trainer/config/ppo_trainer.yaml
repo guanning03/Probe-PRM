@@ -874,9 +874,6 @@ algorithm:
   # Used when adv_estimator is "pkpo"
   pass_k: 1
 
-  # Truncate order for Maclaurin baseline advantage estimator
-  truncate_order: null
-
   # Advantage type for MISC advantage estimator
   advantage_type: grpo
 
