@@ -844,6 +844,38 @@ class ActorRolloutRefWorker(Worker, WorkerProfilerExtension):
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def generate_probe_sequences(self, prompts: DataProto):
+        """Generate short probe completions for faithfulness evaluation.
+        No log_prob recomputation needed.
+        """
+        prompts = prompts.to(get_device_id())
+
+        assert self._is_rollout
+
+        meta_info = {
+            "eos_token_id": self.generation_config.eos_token_id if self.generation_config is not None else self.tokenizer.eos_token_id,
+            "pad_token_id": self.generation_config.pad_token_id if self.generation_config is not None else self.tokenizer.pad_token_id,
+        }
+        prompts.meta_info.update(meta_info)
+
+        with self.rollout_sharding_manager:
+            log_gpu_memory_usage("After entering rollout sharding manager (probe)", logger=logger)
+
+            prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+            output = self.rollout.generate_probe_sequences(prompts=prompts)
+
+            log_gpu_memory_usage("After probe generation", logger=logger)
+
+            output = self.rollout_sharding_manager.postprocess_data(output)
+
+        output = output.to("cpu")
+
+        # clear kv cache
+        get_torch_device().empty_cache()
+        log_gpu_memory_usage("After probe generation cleanup", logger=logger)
+        return output
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     @WorkerProfiler.annotate(color="blue")
     def compute_log_prob(self, data: DataProto):
         # when is_lora is True, we use the actor without lora applied to calculate the log_prob

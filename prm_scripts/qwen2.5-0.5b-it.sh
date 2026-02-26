@@ -94,6 +94,13 @@ python3 -m verl.trainer.main_ppo \
   actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
   actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
   reward_model.reward_manager=multi_thread \
+  probe.enable=False \
+  probe.num_truncations=5 \
+  probe.mc_samples=10 \
+  probe.mc_max_tokens=32 \
+  'probe.suffix= Thus, the final answer is: \\boxed{' \
+  probe.num_splits=1 \
+  probe.overconf_coeff=0.0 \
   trainer.project_name=${PROJECT_NAME} \
   trainer.experiment_name=${EXPERIMENT_NAME} \
   trainer.logger=['console','wandb'] \

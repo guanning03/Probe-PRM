@@ -913,6 +913,30 @@ algorithm:
     # Power used for weight scaling in "pow" method
     weight_pow: 2.0
 
+# ── Faithfulness Probe ──
+probe:
+
+  # Whether to enable the faithfulness probe during training
+  enable: False
+
+  # Number of truncation points along the CoT (creates N+1 evaluation points: 0/N, 1/N, ..., N/N)
+  num_truncations: 5
+
+  # Number of Monte Carlo completions per truncation point
+  mc_samples: 10
+
+  # Max tokens per probe completion (only needs to generate the answer)
+  mc_max_tokens: 32
+
+  # Suffix appended after the truncated CoT to prompt the model for the final answer
+  suffix: " Thus, the final answer is: \\boxed{"
+
+  # Split batch into K sub-batches to reduce peak GPU memory (must divide batch_size)
+  num_splits: 1
+
+  # Coefficient for overconfidence penalty subtracted from advantage (0 = disabled)
+  overconf_coeff: 0.0
+
 # config for the trainer
 trainer:
 
