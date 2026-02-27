@@ -1667,7 +1667,7 @@ class RayPPOTrainer:
                 print(f"  CoT preview: {cot_preview!r}...")
 
             for k in range(num_truncations + 1):
-                cot_trunc = round(cot_len * k / num_truncations)
+                cot_trunc = round(cot_len * k / num_truncations) if num_truncations > 0 else cot_len
                 trunc_end = cot_start + cot_trunc
                 truncated_response = valid_response[:trunc_end]
                 probe_tokens = torch.cat(
@@ -1725,7 +1725,11 @@ class RayPPOTrainer:
         probe_output_padded = self.actor_rollout_wg.generate_probe_sequences(
             probe_data_padded
         )
-        probe_output = unpad_dataproto(probe_output_padded, pad_size=probe_pad_size)
+        # Each padded prompt generates mc_samples responses, so we must
+        # unpad (pad_size * mc_samples) rows, not just pad_size.
+        probe_output = unpad_dataproto(
+            probe_output_padded, pad_size=probe_pad_size * mc_samples
+        )
         timing_raw["probe_gen"] = timing_raw.get("probe_gen", 0) + (
             _time.time() - t_gen_start
         )
@@ -2247,15 +2251,19 @@ class RayPPOTrainer:
                         )
 
                     # ── Overconfidence Penalty ──
+                    # NOTE: Use batch.batch["probe_scores"] (not the local variable
+                    # `probe_scores`) because _balance_batch may have reordered the
+                    # batch via .reorder(), which creates new tensors.
                     if probe_scores is not None:
                         overconf_coeff = self.config.probe.get("overconf_coeff", 0.0)
                         if overconf_coeff > 0.0:
                             num_truncations = self.config.probe.num_truncations
-                            # probe_scores: (batch_size, num_truncations+1)
+                            reordered_probe_scores = batch.batch["probe_scores"]
+                            # reordered_probe_scores: (batch_size, num_truncations+1)
                             # Penalize when early truncation pass-rate is high
                             # (model can get answer without the full CoT ⇒ unfaithful)
                             # Penalty = mean pass-rate at truncation points 0..N-1 (excluding full CoT)
-                            early_mean = probe_scores[:, :-1].mean(dim=1)  # (batch_size,)
+                            early_mean = reordered_probe_scores[:, :-1].mean(dim=1)  # (batch_size,)
                             penalty = overconf_coeff * early_mean
                             advantages = batch.batch["advantages"]
                             response_mask = batch.batch["response_mask"]
@@ -2375,13 +2383,43 @@ class RayPPOTrainer:
                 # ── Probe metrics ──
                 if probe_scores is not None:
                     num_truncations = self.config.probe.num_truncations
-                    for k in range(num_truncations + 1):
-                        frac = k / num_truncations
+                    num_trunc_points = probe_scores.shape[1]
+
+                    # Basic per-truncation metrics (backward compat)
+                    for k in range(num_trunc_points):
+                        frac = k / num_truncations if num_truncations > 0 else 1.0
                         metrics[f"probe/pass_rate_trunc_{frac:.2f}"] = probe_scores[:, k].mean().item()
                     metrics["probe/mean_pass_rate"] = probe_scores.mean().item()
                     metrics["probe/full_cot_pass_rate"] = probe_scores[:, -1].mean().item()
-                    if probe_scores.shape[1] > 1:
+                    if num_trunc_points > 1:
                         metrics["probe/early_mean_pass_rate"] = probe_scores[:, :-1].mean().item()
+
+                    # ── Split by correct / incorrect (requires token_level_scores) ──
+                    if "token_level_scores" in batch.batch.keys():
+                        per_sample_reward = batch.batch["token_level_scores"].sum(dim=-1)  # (batch_size,)
+                        correct_mask = per_sample_reward >= 1.0
+                        incorrect_mask = ~correct_mask
+                        n_correct = int(correct_mask.sum().item())
+                        n_incorrect = int(incorrect_mask.sum().item())
+
+                        overconf_weights = torch.linspace(0.5, -0.5, num_trunc_points)
+
+                        def _log_probe_group(prefix, scores):
+                            """Log probe metrics for a group of samples."""
+                            if scores.shape[0] == 0:
+                                return
+                            metrics[f"{prefix}/mean_score"] = scores.mean().item()
+                            for k_idx in range(num_trunc_points):
+                                frac = k_idx / num_truncations if num_truncations > 0 else 1.0
+                                metrics[f"{prefix}/score_at_{frac:.2f}"] = scores[:, k_idx].mean().item()
+                            oc = (scores * overconf_weights.unsqueeze(0)).sum(dim=1)
+                            metrics[f"{prefix}/overconf"] = oc.mean().item()
+
+                        _log_probe_group("probe_all", probe_scores)
+                        _log_probe_group("probe_correct", probe_scores[correct_mask])
+                        _log_probe_group("probe_incorrect", probe_scores[incorrect_mask])
+                        metrics["probe_all/n_correct"] = float(n_correct)
+                        metrics["probe_all/n_incorrect"] = float(n_incorrect)
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)

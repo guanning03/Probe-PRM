@@ -11,10 +11,10 @@ export WANDB_ENTITY=Tsinghua-IIIS-AI-Team
 MODEL_PATH=Qwen/Qwen2.5-0.5B-Instruct
 MODEL_NAME=Qwen2.5-0.5B-Instruct
 
-TRAIN_DATA=/home/azanette/Math-PRM/data/gsm8k/train.parquet
-VAL_DATA=/home/azanette/Math-PRM/data/gsm8k/test.parquet
+TRAIN_DATA=./data/gsm8k/train.parquet
+VAL_DATA=./data/gsm8k/test.parquet
 
-CHECKPOINT_DIR=/home/azanette/Math-PRM/checkpoints
+CHECKPOINT_DIR=./checkpoints
 
 # Training hyperparameters
 ADVANTAGE_ESTIMATOR=grpo
@@ -35,7 +35,9 @@ TOTAL_EPOCHS=10
 
 PROJECT_NAME=Qwen25_0.5B_IT_PRM_Debug
 
-EXPERIMENT_NAME=${ADVANTAGE_ESTIMATOR}_${MODEL_NAME}
+OVERCONF_COEFF=${1:-0.0}
+shift || true
+EXPERIMENT_NAME=${ADVANTAGE_ESTIMATOR}_${MODEL_NAME}_oc${OVERCONF_COEFF}
 
 # ============ Ray Setup (Single Node) ============
 RAY_TMPDIR=/tmp/ray_${USER}_$$
@@ -94,13 +96,13 @@ python3 -m verl.trainer.main_ppo \
   actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
   actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
   reward_model.reward_manager=multi_thread \
-  probe.enable=False \
+  probe.enable=True \
   probe.num_truncations=5 \
   probe.mc_samples=10 \
-  probe.mc_max_tokens=32 \
-  'probe.suffix= Thus, the final answer is: \\boxed{' \
+  probe.mc_max_tokens=12 \
+  "probe.suffix=' Thus, the final answer is: \\boxed{'" \
   probe.num_splits=1 \
-  probe.overconf_coeff=0.0 \
+  probe.overconf_coeff=${OVERCONF_COEFF} \
   trainer.project_name=${PROJECT_NAME} \
   trainer.experiment_name=${EXPERIMENT_NAME} \
   trainer.logger=['console','wandb'] \
