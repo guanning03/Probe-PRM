@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scontrol show partition general)",
+      "Bash(scontrol show partition array)",
+      "Bash(sinfo -p flame-earlybirds,general,preempt -N -o \"%N %P %G %C %m %a %T\")",
+      "Bash(sort -k2)",
+      "Bash(python3 -m pip list)"
+    ]
+  }
+}

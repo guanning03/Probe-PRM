@@ -1643,12 +1643,27 @@ class RayPPOTrainer:
         # ── 2. Find CoT boundaries & build probe prompts ──
         all_probe_token_ids = []
 
+        # Qwen3 models have vocab_size (151936) larger than the actual tokenizer
+        # vocabulary (max id 151668). The model can generate "ghost" token IDs in
+        # the gap during sampling.  These are invalid as vLLM *input* tokens, so
+        # we clamp them to eos_token_id before building probe prompts.
+        max_valid_token_id = max(
+            max(tokenizer.get_vocab().values()),
+            tokenizer.vocab_size - 1,
+        )
+
         for i in range(sub_batch_size):
             vpl = valid_prompt_lengths[i].item()
             vrl = valid_response_lengths[i].item()
 
             valid_prompt = prompt_all[i, prompt_max_len - vpl:]
             valid_response = response_all[i, :vrl]
+
+            # Clamp out-of-vocabulary token IDs (see comment above)
+            oov_mask = valid_response > max_valid_token_id
+            if oov_mask.any():
+                valid_response = valid_response.clone()
+                valid_response[oov_mask] = tokenizer.eos_token_id
 
             cot_start, cot_end, boundary_tag = _find_cot_boundaries(
                 valid_response, boxed_open_ids
@@ -2343,18 +2358,10 @@ class RayPPOTrainer:
                             )
 
                     # validate
-                    validate_on_last_step = (
-                        is_last_step
-                        and self.config.trainer.get("val_on_last_step", True)
-                    )
-
                     if (
-                        self.val_reward_fn is not None 
-                        and self.config.trainer.test_freq > 0 
-                        and (
-                            validate_on_last_step
-                            or self.global_steps % self.config.trainer.test_freq == 0
-                        )
+                        self.val_reward_fn is not None
+                        and self.config.trainer.test_freq > 0
+                        and self.global_steps % self.config.trainer.test_freq == 0
                     ):
                         with marked_timer("testing", timing_raw, color="green"):
                             val_metrics: dict = self._validate()
@@ -2362,7 +2369,7 @@ class RayPPOTrainer:
                                 last_val_metrics = val_metrics
                         metrics.update(val_metrics)
 
-                    if self.config.trainer.save_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.save_freq == 0):
+                    if self.config.trainer.save_freq > 0 and (self.global_steps % self.config.trainer.save_freq == 0):
                         with marked_timer("save_checkpoint", timing_raw, color="green"):
                             self._save_checkpoint()
 
