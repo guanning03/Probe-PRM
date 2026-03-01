@@ -2389,17 +2389,22 @@ class RayPPOTrainer:
 
                 # ── Probe metrics ──
                 if probe_scores is not None:
+                    # Use the batch-stored version which stays aligned after
+                    # _balance_batch reordering (the local `probe_scores` var
+                    # still points to the pre-reorder tensor).
+                    probe_scores_aligned = batch.batch.get("probe_scores", probe_scores)
+
                     num_truncations = self.config.probe.num_truncations
-                    num_trunc_points = probe_scores.shape[1]
+                    num_trunc_points = probe_scores_aligned.shape[1]
 
                     # Basic per-truncation metrics (backward compat)
                     for k in range(num_trunc_points):
                         frac = k / num_truncations if num_truncations > 0 else 1.0
-                        metrics[f"probe/pass_rate_trunc_{frac:.2f}"] = probe_scores[:, k].mean().item()
-                    metrics["probe/mean_pass_rate"] = probe_scores.mean().item()
-                    metrics["probe/full_cot_pass_rate"] = probe_scores[:, -1].mean().item()
+                        metrics[f"probe/pass_rate_trunc_{frac:.2f}"] = probe_scores_aligned[:, k].mean().item()
+                    metrics["probe/mean_pass_rate"] = probe_scores_aligned.mean().item()
+                    metrics["probe/full_cot_pass_rate"] = probe_scores_aligned[:, -1].mean().item()
                     if num_trunc_points > 1:
-                        metrics["probe/early_mean_pass_rate"] = probe_scores[:, :-1].mean().item()
+                        metrics["probe/early_mean_pass_rate"] = probe_scores_aligned[:, :-1].mean().item()
 
                     # ── Split by correct / incorrect (requires token_level_scores) ──
                     if "token_level_scores" in batch.batch.keys():
@@ -2422,9 +2427,9 @@ class RayPPOTrainer:
                             oc = (scores * overconf_weights.unsqueeze(0)).sum(dim=1)
                             metrics[f"{prefix}/overconf"] = oc.mean().item()
 
-                        _log_probe_group("probe_all", probe_scores)
-                        _log_probe_group("probe_correct", probe_scores[correct_mask])
-                        _log_probe_group("probe_incorrect", probe_scores[incorrect_mask])
+                        _log_probe_group("probe_all", probe_scores_aligned)
+                        _log_probe_group("probe_correct", probe_scores_aligned[correct_mask])
+                        _log_probe_group("probe_incorrect", probe_scores_aligned[incorrect_mask])
                         metrics["probe_all/n_correct"] = float(n_correct)
                         metrics["probe_all/n_incorrect"] = float(n_incorrect)
 

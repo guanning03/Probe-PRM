@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=8
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=128G
+#SBATCH --mem=512G
 #SBATCH --time=2-00:00:00
 #SBATCH --chdir=/home/jgai/code-guanning/Probe-PRM
 #SBATCH --output=/dev/null
